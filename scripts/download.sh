@@ -1,0 +1,63 @@
+#!/bin/bash
+set -e
+
+URL="https://s3.jbecker.dev/data.tar.zst"
+OUTPUT_FILE="data.tar.zst"
+DATA_DIR="data"
+DATA_PATH="${DATA_DIR}/${OUTPUT_FILE}"
+SENTINEL="${DATA_DIR}/.download_complete"
+
+
+# Skip if a previous run completed successfully
+if [ -f "$SENTINEL" ]; then
+    echo "Data already downloaded and extracted, skipping."
+    exit 0
+fi
+
+# Download file using best available tool
+download() {
+    mkdir -p "$DATA_DIR"
+
+    if command -v aria2c &> /dev/null; then
+        echo "Downloading with aria2c..."
+        aria2c -x 16 -s 16 -d "$DATA_DIR" -o "$OUTPUT_FILE" "$URL"
+    elif command -v curl &> /dev/null; then
+        echo "aria2c not found, falling back to curl..."
+        curl -L --create-dirs -o "$DATA_PATH" "$URL"
+    elif command -v wget &> /dev/null; then
+        echo "aria2c and curl not found, falling back to wget..."
+        wget -O "$DATA_PATH" "$URL"
+    else
+        echo "Error: No download tool available (aria2c, curl, or wget required)."
+        exit 1
+    fi
+}
+
+# Extract the archive
+extract() {
+    if ! command -v zstd &> /dev/null; then
+        echo "Error: zstd is required but not installed."
+        echo "Run 'make setup' or install zstd manually."
+        exit 1
+    fi
+
+    echo "Extracting $OUTPUT_FILE..."
+    zstd -d "$DATA_PATH" --stdout | tar -xf -
+    echo "Extraction complete."
+}
+
+# Cleanup downloaded archive
+cleanup() {
+    if [ -f "$DATA_PATH" ]; then
+        echo "Cleaning up..."
+        rm "$DATA_PATH"
+    fi
+}
+
+# Main
+download
+extract
+cleanup
+
+touch "$SENTINEL"
+echo "Data directory ready."
